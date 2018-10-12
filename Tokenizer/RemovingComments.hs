@@ -1,4 +1,4 @@
-module RemovingComments (removeComments)
+module Tokenizer.RemovingComments (removeComments)
 where
         -- Removing comments
         removeComments :: String -> Bool -> Bool -> String -> String
