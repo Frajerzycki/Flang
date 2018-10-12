@@ -17,6 +17,8 @@ module Tokenizer.Tokenizer (tokenize) where
                 | isDigit x                     = number
                 | x == '\"'                     = stringLiteral
                 | x == '\''                     = charLiteral
+                | otherwise                     = logError
+                        "Not used char in Flang at " p1 p2
                 where
                         rangeOperator   = tokenize xs
                                 (tokens ++ [RangeOperator x p1 (p2 + 1)]) p1
