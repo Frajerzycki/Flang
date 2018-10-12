@@ -2,6 +2,8 @@ module Tokenizer.Tokenizer (tokenize) where
         import Data.Char
         import Text.Regex
         import Tokenizer.TokenizerHelpers
+        import Tokenizer.ErrorLogging
+        import Tokenizer.Token
         -- Tokenizing
 
         -- Tokenize Flang
@@ -14,18 +16,22 @@ module Tokenizer.Tokenizer (tokenize) where
                 | isAlpha x || x == '_'         = keywordOrIdentifier
                 | isDigit x                     = number
                 | x == '\"'                     = stringLiteral
-
+                | x == '\''                     = charLiteral
                 where
                         rangeOperator   = tokenize xs
                                 (tokens ++ [RangeOperator x p1 (p2 + 1)]) p1
                                         withChar
-                        newLine         = tokenize xs tokens (p1 + 1) 1
-                        space           = tokenize xs tokens p1 withChar
-                        keywordOrIdentifier         = tokenizeKeyword xs tokens p1 withChar [x]
-                        stringLiteral   = tokenizeStringLiteral xs tokens p1 p2
-                                False False []
-                        number          = tokenizeNumberLiteral (x:xs) tokens p1 p2
-                        withChar        = (p2 + 1)
+                        newLine                 = tokenize xs tokens (p1 + 1) 1
+                        space                   = tokenize xs tokens p1 withChar
+                        keywordOrIdentifier     = tokenizeKeyword xs tokens
+                                p1 withChar [x]
+                        stringLiteral           = tokenizeStringLiteral xs
+                                tokens p1 withChar False False []
+                        charLiteral             = tokenizeCharLiteral xs tokens
+                                p1 withChar
+                        number                  = tokenizeNumberLiteral (x:xs)
+                                tokens p1 p2
+                        withChar                = (p2 + 1)
 
 
         -- Tokenize keyword
@@ -62,15 +68,11 @@ module Tokenizer.Tokenizer (tokenize) where
         tokenizeStringLiteral [] tokens p1 p2 True False result = tokens ++
                 [StringLiteral result p1 p2]
 
-        tokenizeStringLiteral [] _ p1 p2 False False _ =
-                let message = "Quote wasn't closed at " ++ getPosition p1 p2 ++
-                                "."
-                        in error message
+        tokenizeStringLiteral [] _ p1 p2 False False _ = logError
+                "Quote wasn't closed at " p1 p2
 
-        tokenizeStringLiteral [] _ p1 p2 False True  _ =
-                let message = "Char wasn't escaped at " ++ getPosition p1 p2 ++
-                                "."
-                        in error message
+        tokenizeStringLiteral [] _ p1 p2 False True  _ = logError
+                "Char wasn't escaped at " p1 p2
 
         tokenizeStringLiteral _ _ _ _ True True _ =
                 error "String can't be escaped and closed at the same time!"
@@ -81,8 +83,8 @@ module Tokenizer.Tokenizer (tokenize) where
         tokenizeStringLiteral (x:xs) tokens p1 p2 False False result
                 | x == '\n'     = tokenizeStringLiteral xs tokens (p1 + 1) 1
                         False False result
-                | x == '\\'     = tokenizeStringLiteral xs tokens p1 p2 False
-                        True result
+                | x == '\\'     = tokenizeStringLiteral xs tokens p1 (p2 + 1)
+                        False True result
                 | x == '\"'     = tokenizeStringLiteral xs tokens p1 (p2 + 1)
                         True False result
                 | otherwise     = tokenizeStringLiteral xs tokens p1 (p2 + 1)
@@ -91,43 +93,25 @@ module Tokenizer.Tokenizer (tokenize) where
 
         tokenizeStringLiteral (x:xs) tokens p1 p2 False True result =
                 let
-                        intEscape       = nextInteger (x:xs) p2 []
-                        isDigitX        = isDigit x
-                        rest            = if isDigitX then first intEscape else xs
-                        position        = second intEscape
-                        message         = "Unknown escape char at " ++
-                                getPosition p1 p2
-                        y               = case x of
-                                                't' -> '\t'
-                                                'b' -> '\b'
-                                                'n' -> '\n'
-                                                'r' -> '\r'
-                                                'f' -> '\f'
-                                                '\'' -> x
-                                                '\"' -> x
-                                                '\\' -> x
-                                                _    -> case isDigitX of
-                                                        True    -> chr . read $
-                                                                third intEscape
-                                                        False   -> error message
-                        in tokenizeStringLiteral rest tokens p1  position
-                                False False (result ++ [y])
+                        unescapedChar     = unescapeChar (x:xs) p1 p2
+                        y               = first unescapedChar
+                        in tokenizeStringLiteral (second unescapedChar) tokens p1
+                                (third unescapedChar) False False (result ++ [y])
 
         -- Tokenize Number Literal
-        tokenizeNumberLiteral :: String -> Tokens -> Int -> Int-> Tokens
+        tokenizeNumberLiteral :: String -> Tokens -> Int -> Int -> Tokens
 
         tokenizeNumberLiteral xs tokens p1 p2
                 | isFloating = tokenize rAfterFloating (tokens ++
                         [FloatingLiteral floating p1 pAfterFloating]) p1
                                 pAfterFloating
                 | otherwise = tokenize rAfterInteger (tokens ++ [IntegerLiteral
-                        integer p1 (pAfterInteger - 1)]) p1 pAfterInteger
+                        integer p1 pAfterInteger]) p1 pAfterInteger
                 where
-                        nextInt             = nextInteger xs p2 []
+                        nextInt         = nextInteger xs p2 []
                         tailXs          = tail rAfterInteger
-                        headXs          = head rAfterInteger
+                        headXs  = head rAfterInteger
                         afterDot        = nextInteger tailXs (second nextInt) []
-
                         rAfterFloating  = first afterDot
                         rAfterInteger   = first nextInt
                         pAfterFloating  = second afterDot
@@ -135,6 +119,27 @@ module Tokenizer.Tokenizer (tokenize) where
                         floatingPoint   = third afterDot
                         integer         = third nextInt
                         floating        = (integer ++ "." ++ floatingPoint)
-
                         isFloating      = rAfterInteger /= [] &&
                                 (isDigit $ head tailXs) && (headXs == '.')
+
+        tokenizeCharLiteral :: String -> Tokens -> Int -> Int -> Tokens
+        tokenizeCharLiteral [] _ p1 p2 = logError "There isn't any char at " p1
+                p2
+        tokenizeCharLiteral (x:xs) tokens p1 p2
+                | x == '\\' = tokenize (doesSingleQuoteClosed (second
+                        unescapedChar) p1 position) (tokens ++ [CharLiteral
+                        (first unescapedChar) p1 (position + 1)]) p1 (position
+                        + 1)
+
+                | otherwise = tokenize (doesSingleQuoteClosed xs p1 (p2 + 1))
+                        (tokens ++ [CharLiteral x p1 (p2 + 2)]) p1 (p2 + 1)
+                where
+                        unescapedChar           = unescapeChar xs p1 (p2 + 1)
+                        position                = third unescapedChar
+
+        doesSingleQuoteClosed :: String -> Int -> Int -> String
+        doesSingleQuoteClosed [] p1 p2 = logError "Quote wasn't closed at " p1
+                p2
+        doesSingleQuoteClosed (x:xs) p1 p2 = case x of
+                '\''    -> xs
+                _       -> logError "Quote wasn't closed at " p1 p2

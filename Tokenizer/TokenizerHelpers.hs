@@ -1,14 +1,11 @@
 module Tokenizer.TokenizerHelpers
-        (getPosition, boolMatchRegex, keyword, boolLiteral, first,
-        second, third, nextInteger, Token (..), Tokens)
+        (boolMatchRegex, keyword, boolLiteral, first,
+        second, third, nextInteger, unescapeChar)
         where
         import Data.Char
         import Text.Regex
+        import Tokenizer.ErrorLogging(logError)
 
-
-
-        getPosition :: Int -> Int -> String
-        getPosition p1 p2 = (show p1) ++ ":" ++ (show p2)
 
         boolMatchRegex :: Maybe [String] -> Bool
         boolMatchRegex (Just _) = True
@@ -21,13 +18,13 @@ module Tokenizer.TokenizerHelpers
         boolLiteral = mkRegex "^(true|false)$"
 
 
-        first :: (a,c,a) -> a
+        first :: (a, b, c)  -> a
         first (s, _, _) = s
 
-        second :: (a,c,a) -> c
+        second :: (a, b, c) -> b
         second (_, i, _) = i
 
-        third :: (a, c, a) -> a
+        third :: (a, b, c)  -> c
         third (_, _, s) = s
 
 
@@ -38,13 +35,24 @@ module Tokenizer.TokenizerHelpers
                 | isDigit x = nextInteger xs  (p + 1) (result ++ [x])
                 | otherwise = ((x:xs), (p + 1), result)
 
-        data Token = Keyword String Int Int
-                | Operator String Int Int
-                | Identifier String Int Int
-                | RangeOperator Char Int Int
-                | IntegerLiteral String Int Int
-                | FloatingLiteral String Int Int
-                | StringLiteral String Int Int
-                | CharLiteral Char Int Int
-                | BooleanLiteral String Int Int deriving (Show)
-        type Tokens = [Token]
+
+        unescapeChar :: String-> Int -> Int -> (Char, String, Int)
+        unescapeChar [] p1 p2 = logError "There isn't any char at " p1 p2
+        unescapeChar (x:xs) p1 p2 =
+                let
+                        intToUnescape           = nextInteger (x:xs) p2 []
+                        unescapedChar             = case x of
+                                't' -> '\t'
+                                'b' -> '\b'
+                                'n' -> '\n'
+                                'r' -> '\r'
+                                'f' -> '\f'
+                                '\'' -> x
+                                '\"' -> x
+                                '\\' -> x
+                                _    -> case isDigit x of
+                                        True    -> chr . read $ third
+                                                intToUnescape
+                                        False -> logError
+                                                "Unknown escape char at " p1 p2
+                in (unescapedChar, first intToUnescape, second intToUnescape)
