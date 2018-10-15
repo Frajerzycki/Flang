@@ -1,22 +1,8 @@
 module Tokenizer.TokenizerHelpers
-        (boolMatchRegex, keyword, boolLiteral, first,
-        second, third, nextInteger, unescapeChar)
+        (first, second, third, nextInteger, unescapeChar)
         where
         import Data.Char
-        import Text.Regex
         import Tokenizer.ErrorLogging(logError)
-
-
-        boolMatchRegex :: Maybe [String] -> Bool
-        boolMatchRegex (Just _) = True
-        boolMatchRegex Nothing  = False
-
-        keyword :: Regex
-        keyword = mkRegex "^(if|else|data|int|integer|boolean|string|char)$"
-
-        boolLiteral :: Regex
-        boolLiteral = mkRegex "^(true|false)$"
-
 
         first :: (a, b, c)  -> a
         first (s, _, _) = s

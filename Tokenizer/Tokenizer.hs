@@ -1,6 +1,5 @@
 module Tokenizer.Tokenizer (tokenize) where
         import Data.Char
-        import Text.Regex
         import Tokenizer.TokenizerHelpers
         import Tokenizer.ErrorLogging
         import Tokenizer.Token
@@ -10,19 +9,24 @@ module Tokenizer.Tokenizer (tokenize) where
         tokenize :: String -> Tokens -> Int -> Int -> Tokens
         tokenize [] tokens _ _ = tokens
         tokenize (x:xs) tokens p1 p2
-                | x == '\t'  || x == ':'        = rangeOperator
+                | x `elem` ['\t', ';']          = rangeOperator
                 | x == '\n'                     = newLine
                 | x == ' '                      = space
                 | isAlpha x || x == '_'         = keywordOrIdentifier
-                | isDigit x                     = number
+                | isDigit x || isNumberWithChar = number
+                | isShiftOperator               = operator [x]
+                | isComparisonOperator          = operator "="
+                | x `elem` operators            = operator []
                 | x == '\"'                     = stringLiteral
                 | x == '\''                     = charLiteral
                 | otherwise                     = logError
                         "Not used char in Flang at " p1 p2
                 where
-                        rangeOperator   = tokenize xs
-                                (tokens ++ [RangeOperator x p1 (p2 + 1)]) p1
-                                        withChar
+                        tabOrSemicolon          = case x of
+                                '\t'    -> [Tab p1 withChar]
+                                _       -> [Semicolon p1 withChar]
+                        rangeOperator               = tokenize xs
+                                (tokens ++ tabOrSemicolon) p1 withChar
                         newLine                 = tokenize xs tokens (p1 + 1) 1
                         space                   = tokenize xs tokens p1 withChar
                         keywordOrIdentifier     = tokenizeKeyword xs tokens
@@ -31,36 +35,57 @@ module Tokenizer.Tokenizer (tokenize) where
                                 tokens p1 withChar False False []
                         charLiteral             = tokenizeCharLiteral xs tokens
                                 p1 withChar
-                        number                  = tokenizeNumberLiteral (x:xs)
-                                tokens p1 p2
-                        withChar                = (p2 + 1)
+                        number                  = tokenizeNumberLiteral rest
+                                tokens p1 p2 (char isNumberWithChar)
+                        operator y       =
+                                let
+                                        lenY      = length y
+                                        withChars = withChar + lenY
 
+                                in tokenize (drop lenY xs) (tokens ++
+                                        [Operator ([x] ++ y) p1 withChars]) p1
+                                        withChars
+
+                        withChar                = (p2 + 1)
+                        isNumberLiteral (IntegerLiteral _ _ _)
+                                                = True
+                        isNumberLiteral (FloatingLiteral _ _ _)
+                                                = True
+                        isNumberLiteral _       = False
+
+                        isNumberWithChar = (isXsNotEmpty && isTokensNotEmpty &&
+                                x `elem` ['+', '-'] && not (isNumberLiteral $
+                                last tokens)) || not isTokensNotEmpty
+
+                        char b                   = case b of
+                                                        True    -> [x]
+                                                        False   -> []
+
+                        rest                    = char (not isNumberWithChar)
+                                ++ xs
+
+                        operators               =
+                                ['+', '-', '*', '/', '&', '|',
+                                        '^', '!', '<', '>', '=']
+                        isXsNotEmpty            = xs /= []
+                        isTokensNotEmpty        = tokens /= []
+                        isTwoCharOperator y     = isXsNotEmpty && x == y
+                        isShiftOperator         = isTwoCharOperator x && x
+                                `elem` ['<', '>']
+                        isComparisonOperator    = isTwoCharOperator '=' && x
+                                `elem` ['<','>', '!', '=']
 
         -- Tokenize keyword
         tokenizeKeyword :: String -> Tokens -> Int -> Int -> String -> Tokens
 
-        tokenizeKeyword [] tokens p1 p2 result
-                | isKeyword = tokens ++ [Keyword result p1 p2]
-                | otherwise = tokens ++ [Identifier result p1 p2]
-                where isKeyword = boolMatchRegex (matchRegex keyword result)
+        tokenizeKeyword [] tokens p1 p2 result = tokens ++
+                [(getLexeme result p1 p2)]
 
         tokenizeKeyword (x:xs) tokens p1 p2 result
-                | isAlphaNum x || x == '_' = tokenizeKeyword xs tokens p1
+                | isAlphaNum x || x == '_'      = tokenizeKeyword xs tokens p1
                         (p2 + 1) (result ++ [x])
-                | otherwise             = case isKeyword of
-                                True    -> tokenize (x:xs)
-                                        (tokens ++ [Keyword result p1 p2]) p1 p2
-                                False   -> case isBoolLiteral of
-                                        True    -> tokenize (x:xs)
-                                                (tokens ++ [BooleanLiteral
-                                                result p1 p2]) p1 p2
-                                        False   -> tokenize (x:xs) (tokens ++
-                                                [Identifier result p1 p2]) p1 p2
-                where
-                        isKeyword               =
-                                boolMatchRegex $ matchRegex keyword result
-                        isBoolLiteral        =
-                                boolMatchRegex $ matchRegex boolLiteral result
+                | otherwise                     = tokenize (x:xs)
+                        (tokens ++ [(getLexeme result p1 p2)]) p1 p2
 
         -- Tokenize String Literal
 
@@ -95,20 +120,22 @@ module Tokenizer.Tokenizer (tokenize) where
 
         tokenizeStringLiteral (x:xs) tokens p1 p2 False True result =
                 let
-                        unescapedChar     = unescapeChar (x:xs) p1 p2
+                        unescapedChar   = unescapeChar (x:xs) p1 p2
                         y               = first unescapedChar
-                        in tokenizeStringLiteral (second unescapedChar) tokens p1
-                                (third unescapedChar) False False (result ++ [y])
+                        in tokenizeStringLiteral (second unescapedChar) tokens
+                                p1 (third unescapedChar) False False
+                                (result ++ [y])
 
         -- Tokenize Number Literal
-        tokenizeNumberLiteral :: String -> Tokens -> Int -> Int -> Tokens
+        tokenizeNumberLiteral :: String -> Tokens -> Int -> Int -> String
+                -> Tokens
 
-        tokenizeNumberLiteral xs tokens p1 p2
+        tokenizeNumberLiteral xs tokens p1 p2 c
                 | isFloating = tokenize rAfterFloating (tokens ++
-                        [FloatingLiteral floating p1 pAfterFloating]) p1
+                        [FloatingLiteral (c ++ floating) p1 pAfterFloating]) p1
                                 pAfterFloating
                 | otherwise = tokenize rAfterInteger (tokens ++ [IntegerLiteral
-                        integer p1 pAfterInteger]) p1 pAfterInteger
+                        (c ++ integer) p1 pAfterInteger]) p1 pAfterInteger
                 where
                         nextInt         = nextInteger xs p2 []
                         tailXs          = tail rAfterInteger
