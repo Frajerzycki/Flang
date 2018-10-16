@@ -2,14 +2,15 @@ module Tokenizer.Tokenizer (tokenize) where
         import Data.Char
         import Tokenizer.TokenizerHelpers
         import Tokenizer.ErrorLogging
-        import Tokenizer.Token
+        import Tokenizer.Tokens
         -- Tokenizing
 
         -- Tokenize Flang
         tokenize :: String -> Tokens -> Int -> Int -> Tokens
         tokenize [] tokens _ _ = tokens
         tokenize (x:xs) tokens p1 p2
-                | x `elem` ['\t', ';']          = rangeOperator
+                | x `elem`['\t', ';', '[', ']', '(', ')']
+                                                = oneChar
                 | x == '\n'                     = newLine
                 | x == ' '                      = space
                 | isAlpha x || x == '_'         = keywordOrIdentifier
@@ -22,11 +23,15 @@ module Tokenizer.Tokenizer (tokenize) where
                 | otherwise                     = logError
                         "Not used char in Flang at " p1 p2
                 where
-                        tabOrSemicolon          = case x of
+                        tokenOneChar          = case x of
                                 '\t'    -> [Tab p1 withChar]
-                                _       -> [Semicolon p1 withChar]
-                        rangeOperator               = tokenize xs
-                                (tokens ++ tabOrSemicolon) p1 withChar
+                                ';'     -> [Semicolon p1 withChar]
+                                '('     -> [Bracket p1 withChar]
+                                ')'     -> [Bracket p1 withChar]
+                                _       -> [SquareBracket p1 withChar]
+
+                        oneChar               = tokenize xs
+                                (tokens ++ tokenOneChar) p1 withChar
                         newLine                 = tokenize xs tokens (p1 + 1) 1
                         space                   = tokenize xs tokens p1 withChar
                         keywordOrIdentifier     = tokenizeKeyword xs tokens
@@ -53,9 +58,9 @@ module Tokenizer.Tokenizer (tokenize) where
                                                 = True
                         isNumberLiteral _       = False
 
-                        isNumberWithChar = (isXsNotEmpty && isTokensNotEmpty &&
-                                x `elem` ['+', '-'] && not (isNumberLiteral $
-                                last tokens)) || not isTokensNotEmpty
+                        isNumberWithChar = ((isNotEmpty xs) && isNotEmpty tokens
+                                && x `elem` ['+', '-'] && not (isNumberLiteral $
+                                last tokens)) || (not $ isNotEmpty tokens)
 
                         char b                   = case b of
                                                         True    -> [x]
@@ -67,11 +72,15 @@ module Tokenizer.Tokenizer (tokenize) where
                         operators               =
                                 ['+', '-', '*', '/', '&', '|',
                                         '^', '!', '<', '>', '=']
-                        isXsNotEmpty            = xs /= []
-                        isTokensNotEmpty        = tokens /= []
-                        isTwoCharOperator y     = isXsNotEmpty && x == y
-                        isShiftOperator         = isTwoCharOperator x && x
-                                `elem` ['<', '>']
+                        isNotEmpty ys           = ys /= []
+                        isTwoCharOperator y     = isNotEmpty xs && head xs == y
+                        isShiftOperator         = let
+                                        txs             = tail xs
+                                        tx              = head txs
+                                        in isTwoCharOperator x && x
+                                        `elem` ['<', '>'] && ((isNotEmpty
+                                        txs && tx /= '=') || (not $ isNotEmpty
+                                        txs))
                         isComparisonOperator    = isTwoCharOperator '=' && x
                                 `elem` ['<','>', '!', '=']
 
@@ -139,7 +148,7 @@ module Tokenizer.Tokenizer (tokenize) where
                 where
                         nextInt         = nextInteger xs p2 []
                         tailXs          = tail rAfterInteger
-                        headXs  = head rAfterInteger
+                        headXs          = head rAfterInteger
                         afterDot        = nextInteger tailXs (second nextInt) []
                         rAfterFloating  = first afterDot
                         rAfterInteger   = first nextInt
