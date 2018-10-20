@@ -26,9 +26,9 @@ module Tokenizer.Tokenizer (tokenize) where
                         tokenOneChar          = case x of
                                 '\t'    -> [Tab p1 withChar]
                                 ';'     -> [Semicolon p1 withChar]
-                                '('     -> [Bracket p1 withChar]
-                                ')'     -> [Bracket p1 withChar]
-                                _       -> [SquareBracket p1 withChar]
+                                '('     -> [Bracket [x] p1 withChar]
+                                ')'     -> [Bracket [x] p1 withChar]
+                                _       -> [SquareBracket [x] p1 withChar]
 
                         oneChar               = tokenize xs
                                 (tokens ++ tokenOneChar) p1 withChar
@@ -58,9 +58,9 @@ module Tokenizer.Tokenizer (tokenize) where
                                                 = True
                         isNumberLiteral _       = False
 
-                        isNumberWithChar = ((isNotEmpty xs) && isNotEmpty tokens
+                        isNumberWithChar = ((not $ null xs) && (not $ null tokens)
                                 && x `elem` ['+', '-'] && not (isNumberLiteral $
-                                last tokens)) || (not $ isNotEmpty tokens)
+                                last tokens)) || (null tokens)
 
                         char b                   = case b of
                                                         True    -> [x]
@@ -72,15 +72,13 @@ module Tokenizer.Tokenizer (tokenize) where
                         operators               =
                                 ['+', '-', '*', '/', '&', '|',
                                         '^', '!', '<', '>', '=']
-                        isNotEmpty ys           = ys /= []
-                        isTwoCharOperator y     = isNotEmpty xs && head xs == y
+                        isTwoCharOperator y     = not $ null xs && head xs == y
                         isShiftOperator         = let
                                         txs             = tail xs
                                         tx              = head txs
                                         in isTwoCharOperator x && x
-                                        `elem` ['<', '>'] && ((isNotEmpty
-                                        txs && tx /= '=') || (not $ isNotEmpty
-                                        txs))
+                                        `elem` ['<', '>'] && ((not $ null
+                                        txs && tx /= '=') || null txs)
                         isComparisonOperator    = isTwoCharOperator '=' && x
                                 `elem` ['<','>', '!', '=']
 
@@ -166,11 +164,11 @@ module Tokenizer.Tokenizer (tokenize) where
         tokenizeCharLiteral (x:xs) tokens p1 p2
                 | x == '\\' = tokenize (doesSingleQuoteClosed (second
                         unescapedChar) p1 position) (tokens ++ [CharLiteral
-                        (first unescapedChar) p1 (position + 1)]) p1 (position
+                        [first unescapedChar] p1 (position + 1)]) p1 (position
                         + 1)
 
                 | otherwise = tokenize (doesSingleQuoteClosed xs p1 (p2 + 1))
-                        (tokens ++ [CharLiteral x p1 (p2 + 2)]) p1 (p2 + 1)
+                        (tokens ++ [CharLiteral [x] p1 (p2 + 2)]) p1 (p2 + 1)
                 where
                         unescapedChar           = unescapeChar xs p1 (p2 + 1)
                         position                = third unescapedChar
