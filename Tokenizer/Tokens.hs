@@ -1,17 +1,23 @@
 module Tokenizer.Tokens (Token (..), Tokens, getLexeme) where
-        data Token = IfKeyword Int Int
-                | ElseKeyword Int Int
-                | TypeKeyword Int Int
-                | Operator String Int Int
-                | Identifier String Int Int
-                | Semicolon Int Int
-                | Bracket Int Int
-                | SquareBracket Int Int
-                | Tab Int Int
-                | IntegerLiteral String Int Int
-                | FloatingLiteral String Int Int
-                | StringLiteral String Int Int
-                | CharLiteral Char Int Int deriving (Show, Eq)
+        data Token = IfKeyword {charNumber :: Int, lineNumber :: Int}
+                | ElseKeyword {charNumber :: Int, lineNumber :: Int}
+                | TypeKeyword {charNumber :: Int, lineNumber :: Int}
+                | Operator {value :: String, charNumber :: Int,
+                        lineNumber :: Int}
+                | Identifier {value :: String, charNumber :: Int,
+                        lineNumber :: Int}
+                | Semicolon {charNumber :: Int, lineNumber :: Int}
+                | Bracket {value :: String, charNumber :: Int, lineNumber :: Int}
+                | SquareBracket {value :: String, charNumber :: Int, lineNumber :: Int}
+                | Tab {charNumber :: Int, lineNumber :: Int}
+                | IntegerLiteral {value :: String, charNumber :: Int,
+                        lineNumber:: Int}
+                | FloatingLiteral {value :: String, charNumber :: Int,
+                        lineNumber:: Int}
+                | StringLiteral {value :: String, charNumber :: Int,
+                        lineNumber:: Int}
+                | CharLiteral {value :: String, charNumber :: Int,
+                        lineNumber:: Int} deriving (Show, Eq)
         type Tokens = [Token]
 
         getLexeme :: String -> Int -> Int -> Token
