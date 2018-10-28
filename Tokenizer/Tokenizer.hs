@@ -1,7 +1,7 @@
 module Tokenizer.Tokenizer (tokenize) where
         import Data.Char
         import Tokenizer.TokenizerHelpers
-        import Tokenizer.ErrorLogging
+        import Helpers.ErrorLogging
         import Tokenizer.Tokens
         -- Tokenizing
 
@@ -25,9 +25,10 @@ module Tokenizer.Tokenizer (tokenize) where
                 where
                         tokenOneChar          = case x of
                                 '\t'    -> [Tab p1 withChar]
+                                ','     -> [Comma p1 withChar]
                                 ';'     -> [Semicolon p1 withChar]
-                                '('     -> [Bracket [x] p1 withChar]
-                                ')'     -> [Bracket [x] p1 withChar]
+                                '('     -> [LeftBracket "(" p1 withChar]
+                                ')'     -> [RightBracket p1 withChar]
                                 _       -> [SquareBracket [x] p1 withChar]
 
                         oneChar               = tokenize xs
@@ -58,9 +59,10 @@ module Tokenizer.Tokenizer (tokenize) where
                                                 = True
                         isNumberLiteral _       = False
 
-                        isNumberWithChar = ((not $ null xs) && (not $ null tokens)
-                                && x `elem` ['+', '-'] && not (isNumberLiteral $
-                                last tokens)) || (null tokens)
+                        isNumberWithChar = x `elem` ['+', '-'] && ([] /= xs) &&
+                                isDigit (head xs)  && (([] /= tokens &&
+                                not (isNumberLiteral $ last tokens)) ||
+                                (null tokens))
 
                         char b                   = case b of
                                                         True    -> [x]
@@ -72,12 +74,12 @@ module Tokenizer.Tokenizer (tokenize) where
                         operators               =
                                 ['+', '-', '*', '/', '&', '|',
                                         '^', '!', '<', '>', '=']
-                        isTwoCharOperator y     = not $ null xs && head xs == y
+                        isTwoCharOperator y     = [] /= xs && head xs == y
                         isShiftOperator         = let
                                         txs             = tail xs
                                         tx              = head txs
                                         in isTwoCharOperator x && x
-                                        `elem` ['<', '>'] && ((not $ null
+                                        `elem` ['<', '>'] && (([] /=
                                         txs && tx /= '=') || null txs)
                         isComparisonOperator    = isTwoCharOperator '=' && x
                                 `elem` ['<','>', '!', '=']
@@ -155,7 +157,7 @@ module Tokenizer.Tokenizer (tokenize) where
                         floatingPoint   = third afterDot
                         integer         = third nextInt
                         floating        = (integer ++ "." ++ floatingPoint)
-                        isFloating      = rAfterInteger /= [] &&
+                        isFloating      = rAfterInteger /= [] && tailXs /= [] &&
                                 (isDigit $ head tailXs) && (headXs == '.')
 
         tokenizeCharLiteral :: String -> Tokens -> Int -> Int -> Tokens
@@ -166,7 +168,6 @@ module Tokenizer.Tokenizer (tokenize) where
                         unescapedChar) p1 position) (tokens ++ [CharLiteral
                         [first unescapedChar] p1 (position + 1)]) p1 (position
                         + 1)
-
                 | otherwise = tokenize (doesSingleQuoteClosed xs p1 (p2 + 1))
                         (tokens ++ [CharLiteral [x] p1 (p2 + 2)]) p1 (p2 + 1)
                 where
